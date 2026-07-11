@@ -81,7 +81,7 @@ namespace UnifiPortSync
             }
         }
 
-        // Backs the "Sync Now" button in the Networking settings — applies and reports a summary.
+        // Backs the "Sync Now" button in the settings tab — applies and reports a summary.
         [JSONMethod("Run a sync now and apply any changes to UniFi.", "Success/failure with a short summary.")]
         public async Task<ActionResult> RunSync()
         {
