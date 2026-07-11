@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>UnifiPortSync</AssemblyName>
+    <RootNamespace>UnifiPortSync</RootNamespace>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <Company>Mecistios</Company>
+    <!-- ModuleShared is a build-time reference only; AMP ships it at runtime. -->
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Copy ModuleShared.dll from your AMP installation into lib/. It is a build-time
+         reference only (Private=false) since AMP already provides it at runtime. -->
+    <Reference Include="ModuleShared">
+      <HintPath>lib/ModuleShared.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
