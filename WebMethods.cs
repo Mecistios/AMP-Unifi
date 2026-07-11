@@ -81,6 +81,26 @@ namespace UnifiPortSync
             }
         }
 
+        // Backs the "Test Connection" button — connects and lists the sites so you can pick one.
+        [JSONMethod("Test the UniFi connection and list the available sites.", "Success/failure with the site list.")]
+        public async Task<ActionResult> TestConnection()
+        {
+            var u = _settings.Unifi;
+            if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey))
+                return ActionResult.FailureReason((FormattableString)$"Set Host and API key first.", "", (FormattableString)null);
+            try
+            {
+                using var c = _plugin.CreateClient();
+                var sites = await c.ListSitesAsync();
+                var list = string.Join(", ", sites.Select(s => $"{s.InternalReference} ({s.Name})"));
+                return new ActionResult(true, (FormattableString)$"Connected. {sites.Count} site(s): {list}", "", (FormattableString)null);
+            }
+            catch (Exception ex)
+            {
+                return ActionResult.FailureReason((FormattableString)$"Connection failed: {ex.Message}", "", (FormattableString)null);
+            }
+        }
+
         // Backs the "Sync Now" button in the settings tab — applies and reports a summary.
         [JSONMethod("Run a sync now and apply any changes to UniFi.", "Success/failure with a short summary.")]
         public async Task<ActionResult> RunSync()
@@ -93,9 +113,10 @@ namespace UnifiPortSync
             if (plan.Error != null)
                 return ActionResult.FailureReason((FormattableString)$"Sync failed: {plan.Error}", "", (FormattableString)null);
 
-            return new ActionResult(true,
-                (FormattableString)$"Sync complete — created {plan.ToCreate.Count}, updated {plan.ToUpdate.Count}, removed {plan.ToDelete.Count}, {plan.AlreadyForwarded.Count} already OK, {plan.Conflicts.Count} conflict(s).",
-                "", (FormattableString)null);
+            var summary = $"Sync complete — created {plan.ToCreate.Count}, updated {plan.ToUpdate.Count}, removed {plan.ToDelete.Count}, {plan.AlreadyForwarded.Count} already OK.";
+            if (plan.Conflicts.Count > 0)
+                summary += $" {plan.Conflicts.Count} conflict(s): " + string.Join("; ", plan.Conflicts);
+            return new ActionResult(true, (FormattableString)$"{summary}", "", (FormattableString)null);
         }
 
         [JSONMethod("List the port-forward rules on the configured UniFi site.", "Object with the current forwards.")]

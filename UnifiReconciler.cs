@@ -185,7 +185,7 @@ namespace UnifiPortSync
                         if (string.Equals(f.Fwd, _cfg.TargetLanIp, StringComparison.OrdinalIgnoreCase))
                             coveredSameHost.Add(p);
                         else if (conflictPorts.Add(p))
-                            plan.Conflicts.Add($"{d.RuleName}: port {p}/{d.Proto} used by '{f.Name}' → {f.Fwd} (different host!)");
+                            plan.Conflicts.Add($"Port {p}/{d.Proto} for instance '{d.Instance}' is already forwarded to another host ({f.Fwd}) by rule '{f.Name}' — skipped to avoid overwriting it.");
                     }
                 }
 

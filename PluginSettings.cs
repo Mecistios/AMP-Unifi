@@ -34,8 +34,9 @@ namespace UnifiPortSync
             public string ApiKey = "";
 
             [WebSetting("UniFi Site",
-                "Site identifier (internalReference), e.g. 'default'. Use the Test button to list your sites.",
+                "Site identifier (internalReference), e.g. 'default'. Use the Test Connection button to list your sites.",
                 false, "", "", "unifi,site", false, "default", "", "", "Unifi Network Automation",50)]
+            [InlineAction("UnifiPortSync", "TestConnection", "Test Connection", "", false)]
             public string SiteName = "default";
 
             [WebSetting("Forward Target LAN IP",

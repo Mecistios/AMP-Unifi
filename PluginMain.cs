@@ -68,9 +68,14 @@ namespace UnifiPortSync
             {
                 var plan = await new UnifiReconciler(ToConfig(_settings.Unifi)).ReconcileAsync(apply);
                 if (plan.Error != null)
+                {
                     _log.Warning($"UniFi sync: {plan.Error}");
-                else
-                    _log.Info($"UniFi sync ({(apply ? "applied" : "dry-run")}): +{plan.ToCreate.Count} ~{plan.ToUpdate.Count} -{plan.ToDelete.Count}, conflicts {plan.Conflicts.Count}, ok {plan.AlreadyForwarded.Count}");
+                    return plan;
+                }
+                // Surface every conflict as its own warning so it shows up in the console/log.
+                foreach (var c in plan.Conflicts)
+                    _log.Warning($"UniFi port conflict — {c}");
+                _log.Info($"UniFi sync ({(apply ? "applied" : "dry-run")}): +{plan.ToCreate.Count} ~{plan.ToUpdate.Count} -{plan.ToDelete.Count}, conflicts {plan.Conflicts.Count}, ok {plan.AlreadyForwarded.Count}");
                 return plan;
             }
             finally { _gate.Release(); }
