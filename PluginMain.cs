@@ -11,15 +11,22 @@ namespace UnifiPortSync
     {
         private readonly PluginSettings _settings;
         private readonly ILogger _log;
+        private readonly IPluginMessagePusher _messages;
+        private readonly IRunningTasksManager _tasks;
 
         private Timer _timer;
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
 
-        public PluginMain(ILogger log, IConfigSerializer config, IAMPInstanceInfo info)
+        public PluginMain(ILogger log, IConfigSerializer config, IAMPInstanceInfo info, IPluginMessagePusher messages, IRunningTasksManager tasks)
         {
             _log = log;
+            _messages = messages;
+            _tasks = tasks;
             _settings = config.Load<PluginSettings>("", true, null);
         }
+
+        // The plugin ships a small WebRoot/Plugin.js to render conflict pop-ups.
+        public override bool HasFrontendContent => true;
 
         public override IEnumerable<SettingStore> SettingStores => new List<SettingStore> { _settings };
 
@@ -75,6 +82,14 @@ namespace UnifiPortSync
                 // Surface every conflict as its own warning so it shows up in the console/log.
                 foreach (var c in plan.Conflicts)
                     _log.Warning($"UniFi port conflict — {c}");
+                // Push a short-lived pop-up to anyone on the ADS view.
+                if (plan.Conflicts.Count > 0)
+                {
+                    _messages.Push("portconflict", string.Join("\n\n", plan.Conflicts), 20, "", "UnifiPortSync");
+                    // Raise a failed task so it also shows in the activity bar while browsing the panel.
+                    var task = _tasks.CreateTask("UniFi Port Sync — port conflict", "", false, false, false, null, false, false);
+                    task.End(TaskState.Failed, string.Join(" | ", plan.Conflicts));
+                }
                 _log.Info($"UniFi sync ({(apply ? "applied" : "dry-run")}): +{plan.ToCreate.Count} ~{plan.ToUpdate.Count} -{plan.ToDelete.Count}, conflicts {plan.Conflicts.Count}, ok {plan.AlreadyForwarded.Count}");
                 return plan;
             }
