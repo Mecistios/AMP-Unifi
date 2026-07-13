@@ -11,7 +11,6 @@ namespace UnifiPortSync
     internal class DesiredPort
     {
         public string Instance;
-        public string Ref;      // e.g. GamePort, QueryPort, RCONPort
         public string Proto;    // tcp | udp | tcp_udp
         public int Port;
         public int Range = 1;
@@ -142,7 +141,7 @@ namespace UnifiPortSync
                     if (IsAdminPort(rf)) continue; // never expose RCON/admin ports
                     list.Add(new DesiredPort
                     {
-                        Instance = name, Ref = rf, Proto = ProtoName(proto), Port = port, Range = range
+                        Instance = name, Proto = ProtoName(proto), Port = port, Range = range
                     });
                 }
             }

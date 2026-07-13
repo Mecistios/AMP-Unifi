@@ -133,10 +133,9 @@ namespace UnifiPortSync
 
         private static UnifiConfig ToConfig(PluginSettings.UnifiSettings u) => new UnifiConfig
         {
-            Enabled = u.Enabled, Host = u.Host, Port = u.Port, ApiKey = u.ApiKey,
+            Host = u.Host, Port = u.Port, ApiKey = u.ApiKey,
             SiteName = u.SiteName, TargetLanIp = u.TargetLanIp,
-            SyncIntervalMinutes = u.SyncIntervalMinutes, RuleNamePrefix = u.RuleNamePrefix,
-            AmpDataPath = u.AmpDataPath
+            RuleNamePrefix = u.RuleNamePrefix, AmpDataPath = u.AmpDataPath
         };
 
         // Shared entry point used by the timer, the Sync button and the file watcher. Only one
