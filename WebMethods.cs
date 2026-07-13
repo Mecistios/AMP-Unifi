@@ -81,7 +81,7 @@ namespace UnifiPortSync
             }
         }
 
-        // Backs the "Test Connection" button — connects and lists the sites so you can pick one.
+        // Backs the "Test Connection" button. Connects and lists the sites so you can pick one.
         [JSONMethod("Test the UniFi connection and list the available sites.", "Success/failure with the site list.")]
         public async Task<ActionResult> TestConnection()
         {
@@ -101,7 +101,7 @@ namespace UnifiPortSync
             }
         }
 
-        // Backs the "Sync Now" button in the settings tab — applies and reports a summary.
+        // Backs the "Sync Now" button in the settings tab. Applies and reports a summary.
         [JSONMethod("Run a sync now and apply any changes to UniFi.", "Success/failure with a short summary.")]
         public async Task<ActionResult> RunSync()
         {
@@ -113,7 +113,7 @@ namespace UnifiPortSync
             if (plan.Error != null)
                 return ActionResult.FailureReason((FormattableString)$"Sync failed: {plan.Error}", "", (FormattableString)null);
 
-            var summary = $"Sync complete — created {plan.ToCreate.Count}, updated {plan.ToUpdate.Count}, removed {plan.ToDelete.Count}, {plan.AlreadyForwarded.Count} already OK.";
+            var summary = $"Sync complete. Created {plan.ToCreate.Count}, updated {plan.ToUpdate.Count}, removed {plan.ToDelete.Count}, {plan.AlreadyForwarded.Count} already OK.";
             if (plan.Conflicts.Count > 0)
                 summary += $" {plan.Conflicts.Count} conflict(s): " + string.Join("; ", plan.Conflicts);
             return new ActionResult(true, (FormattableString)$"{summary}", "", (FormattableString)null);

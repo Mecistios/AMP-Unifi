@@ -60,6 +60,13 @@ namespace UnifiPortSync
             return null;
         }
 
+        // The folder holding the per-instance subfolders (the instances dir). Null if not found.
+        public string ResolveInstancesDir()
+        {
+            var root = FindAmpDataPath();
+            return root == null ? null : Path.Combine(root, "instances");
+        }
+
         private static string ProtoName(int p) => p switch { 0 => "tcp", 1 => "udp", 2 => "tcp_udp", _ => "tcp_udp" };
 
         // Ports that should never be forwarded to the internet (admin/RCON/echo/log).
@@ -95,7 +102,8 @@ namespace UnifiPortSync
         }
 
         // Build the set of ports every (non-ADS, non-suspended) instance wants exposed.
-        public List<DesiredPort> GetDesiredPorts(out string error)
+        // When onlyInstance is set, restrict to that one instance (used for the live per-instance syncs).
+        public List<DesiredPort> GetDesiredPorts(out string error, string onlyInstance = null)
         {
             error = null;
             var list = new List<DesiredPort>();
@@ -124,6 +132,7 @@ namespace UnifiPortSync
             {
                 string name = inst.GetProperty("InstanceName").GetString();
                 string module = inst.GetProperty("Module").GetString();
+                if (onlyInstance != null && !string.Equals(name, onlyInstance, StringComparison.OrdinalIgnoreCase)) continue;
                 if (string.Equals(module, "ADS", StringComparison.OrdinalIgnoreCase)) continue; // skip controller
                 if (inst.TryGetProperty("Suspended", out var s) && s.ValueKind == JsonValueKind.True) continue;
 
@@ -141,10 +150,12 @@ namespace UnifiPortSync
         }
 
         // Compute what would change in UniFi to match the desired ports. Optionally apply.
-        public async Task<SyncPlan> ReconcileAsync(bool apply)
+        // When onlyInstance is set, only that instance's rules are touched. Everything else
+        // is left alone, so one instance change can't disturb the rest.
+        public async Task<SyncPlan> ReconcileAsync(bool apply, string onlyInstance = null)
         {
             var plan = new SyncPlan();
-            var desired = GetDesiredPorts(out var err);
+            var desired = GetDesiredPorts(out var err, onlyInstance);
             if (err != null) { plan.Error = err; return plan; }
 
             List<PortForward> existing;
@@ -156,8 +167,12 @@ namespace UnifiPortSync
             var ours = existing.Where(f => !string.IsNullOrEmpty(prefix) && (f.Name ?? "").StartsWith(prefix)).ToList();
             var foreign = existing.Where(f => string.IsNullOrEmpty(prefix) || !(f.Name ?? "").StartsWith(prefix)).ToList();
 
+            // For a targeted sync, only our rules belonging to that instance are in scope for
+            // create/update/orphan-removal. The rule name always starts with "<prefix><instance> ".
+            var instScope = onlyInstance == null ? null : $"{prefix}{onlyInstance} ";
+
             // Group each instance's ports by protocol into a single combined forward rule
-            // (UDP with UDP, TCP with TCP, tcp_udp separately) — matching how forwards are kept by hand.
+            // (UDP with UDP, TCP with TCP, tcp_udp separately), matching how forwards are kept by hand.
             var rules = desired
                 .GroupBy(p => (p.Instance, p.Proto))
                 .Select(g => new DesiredRule
@@ -185,7 +200,7 @@ namespace UnifiPortSync
                         if (string.Equals(f.Fwd, _cfg.TargetLanIp, StringComparison.OrdinalIgnoreCase))
                             coveredSameHost.Add(p);
                         else if (conflictPorts.Add(p))
-                            plan.Conflicts.Add($"Port {p}/{d.Proto} for instance '{d.Instance}' is already forwarded to another host ({f.Fwd}) by rule '{f.Name}' — skipped to avoid overwriting it.");
+                            plan.Conflicts.Add($"Port {p}/{d.Proto} for instance '{d.Instance}' is already forwarded to another host ({f.Fwd}) by rule '{f.Name}', so it was skipped to avoid overwriting it.");
                     }
                 }
 
@@ -196,7 +211,7 @@ namespace UnifiPortSync
                 if (uncovered.Count == 0)
                 {
                     if (coveredSameHost.Count > 0)
-                        plan.AlreadyForwarded.Add($"{d.RuleName} ({d.Proto} {d.PortSpec}) — covered by existing rule(s)");
+                        plan.AlreadyForwarded.Add($"{d.RuleName} ({d.Proto} {d.PortSpec}), covered by existing rule(s)");
                     // Our own rule is redundant now (e.g. a manual rule took over) -> drop it.
                     if (mine != null)
                     {
@@ -209,20 +224,24 @@ namespace UnifiPortSync
                 var spec = string.Join(",", uncovered);
                 if (mine == null)
                 {
-                    plan.ToCreate.Add($"{d.RuleName} → {_cfg.TargetLanIp}:{spec}/{d.Proto}");
+                    plan.ToCreate.Add($"{d.RuleName} -> {_cfg.TargetLanIp}:{spec}/{d.Proto}");
                     if (apply) await client.CreatePortForwardAsync(ToRule(d, spec));
                 }
                 else if (mine.Proto != d.Proto || mine.DstPort != spec || mine.FwdPort != spec || mine.Fwd != _cfg.TargetLanIp || !mine.Enabled)
                 {
-                    plan.ToUpdate.Add($"{d.RuleName} → {_cfg.TargetLanIp}:{spec}/{d.Proto}");
+                    plan.ToUpdate.Add($"{d.RuleName} -> {_cfg.TargetLanIp}:{spec}/{d.Proto}");
                     if (apply) { var r = ToRule(d, spec); r.Id = mine.Id; await client.UpdatePortForwardAsync(r); }
                 }
                 else plan.Unchanged.Add(d.RuleName);
             }
 
-            // Orphans: our forwards with no matching desired rule -> remove.
+            // Orphans: our forwards with no matching desired rule -> remove. On a targeted
+            // sync, only consider this instance's rules so other instances aren't affected.
             var wantedNames = rules.Select(d => d.RuleName).ToHashSet();
-            foreach (var f in ours.Where(f => !wantedNames.Contains(f.Name)))
+            var orphanScope = instScope == null
+                ? ours
+                : ours.Where(f => (f.Name ?? "").StartsWith(instScope));
+            foreach (var f in orphanScope.Where(f => !wantedNames.Contains(f.Name)))
             {
                 plan.ToDelete.Add(f.Name);
                 if (apply && !string.IsNullOrEmpty(f.Id)) await client.DeletePortForwardAsync(f.Id);
