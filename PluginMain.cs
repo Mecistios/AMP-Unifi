@@ -135,6 +135,13 @@ namespace UnifiPortSync
             catch (Exception ex) { _log.Warning($"Scheduled UniFi sync errored: {ex.Message}"); }
         }
 
+        // Lets the web methods pop a result dialog in the browser. AMP does not reliably
+        // show the text of a successful ActionResult, so the buttons push their outcome
+        // through the frontend script instead. RequiredPermission must be null: the
+        // websocket broadcast checks HasPermission on anything non-null, and an empty
+        // string matches no permission node, which silently drops the message.
+        internal void PushPopup(string type, string text) => _messages.Push(type, text, 20, null, "UnifiPortSync");
+
         internal UnifiClient CreateClient()
         {
             var u = _settings.Unifi;
@@ -167,7 +174,7 @@ namespace UnifiPortSync
                 // Push a short-lived pop-up to anyone on the ADS view.
                 if (plan.Conflicts.Count > 0)
                 {
-                    _messages.Push("portconflict", string.Join("\n\n", plan.Conflicts), 20, "", "UnifiPortSync");
+                    _messages.Push("portconflict", string.Join("\n\n", plan.Conflicts), 20, null, "UnifiPortSync");
                     // Raise a failed task so it also shows in the activity bar while browsing the panel.
                     var task = _tasks.CreateTask("UniFi Port Sync: port conflict", "", false, false, false, null, false, false);
                     task.End(TaskState.Failed, string.Join(" | ", plan.Conflicts));

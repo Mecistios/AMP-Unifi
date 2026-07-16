@@ -86,42 +86,61 @@ namespace UnifiPortSync
         }
 
         // Backs the "Test Connection" button. Connects and lists the sites so you can pick one.
+        // The outcome is pushed as a dialog too, since the panel tends to swallow the
+        // ActionResult text and clicking a button that seems to do nothing is no fun.
         [JSONMethod("Test the UniFi connection and list the available sites.", "Success/failure with the site list.")]
         public async Task<ActionResult> TestConnection()
         {
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey))
+            {
+                _plugin.PushPopup("testfail", "Set Host and API key first.");
                 return ActionResult.FailureReason((FormattableString)$"Set Host and API key first.", "", (FormattableString)null);
+            }
             try
             {
                 using var c = _plugin.CreateClient();
                 var sites = await c.ListSitesAsync();
-                var list = string.Join(", ", sites.Select(s => $"{s.InternalReference} ({s.Name})"));
-                return new ActionResult(true, (FormattableString)$"Connected. {sites.Count} site(s): {list}", "", (FormattableString)null);
+                var list = string.Join("\n", sites.Select(s => $"{s.InternalReference} ({s.Name})"));
+                _plugin.PushPopup("testok", $"Connected. {sites.Count} site(s) found:\n{list}\n\nUse the internalReference (first value) as the site setting.");
+                return new ActionResult(true, (FormattableString)$"Connected. {sites.Count} site(s) found.", "", (FormattableString)null);
             }
             catch (Exception ex)
             {
+                _plugin.PushPopup("testfail", $"Connection failed: {ex.Message}");
                 return ActionResult.FailureReason((FormattableString)$"Connection failed: {ex.Message}", "", (FormattableString)null);
             }
         }
 
-        // Backs the "Sync Now" button in the settings tab. Applies and reports a summary.
+        // Backs the "Sync Now" button in the settings tab. Applies and reports a summary,
+        // both as the action result and as a dialog (same reason as TestConnection).
         [JSONMethod("Run a sync now and apply any changes to UniFi.", "Success/failure with a short summary.")]
         public async Task<ActionResult> RunSync()
         {
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey) || string.IsNullOrWhiteSpace(u.TargetLanIp))
+            {
+                _plugin.PushPopup("syncfail", "Set Host, API key and Target LAN IP first.");
                 return ActionResult.FailureReason((FormattableString)$"Set Host, API key and Target LAN IP first.", "", (FormattableString)null);
+            }
             if (!u.Enabled)
+            {
+                _plugin.PushPopup("syncfail", "Enable UniFi Port Sync first, then run the sync.");
                 return ActionResult.FailureReason((FormattableString)$"Enable UniFi Port Sync first, then run the sync.", "", (FormattableString)null);
+            }
 
             var plan = await _plugin.RunReconcileAsync(apply: true);
             if (plan.Error != null)
+            {
+                _plugin.PushPopup("syncfail", $"Sync failed: {plan.Error}");
                 return ActionResult.FailureReason((FormattableString)$"Sync failed: {plan.Error}", "", (FormattableString)null);
+            }
 
             var summary = $"Sync complete. Created {plan.ToCreate.Count}, updated {plan.ToUpdate.Count}, removed {plan.ToDelete.Count}, {plan.AlreadyForwarded.Count} already OK.";
+            // Conflicts get their own dialog from the reconcile itself, so just count them here.
             if (plan.Conflicts.Count > 0)
-                summary += $" {plan.Conflicts.Count} conflict(s): " + string.Join("; ", plan.Conflicts);
+                summary += $"\n\n{plan.Conflicts.Count} conflict(s) were skipped; a separate warning lists them.";
+            _plugin.PushPopup(plan.Conflicts.Count > 0 ? "syncfail" : "syncok", summary);
             return new ActionResult(true, (FormattableString)$"{summary}", "", (FormattableString)null);
         }
 
