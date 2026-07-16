@@ -76,7 +76,10 @@ namespace UnifiPortSync
             return r.Contains("rcon") || r.Contains("admin") || r.Contains("echo");
         }
 
-        // Parse the App.Ports=[...] JSON array from an instance's <Module>.kvp
+        // Parse the App.Ports=[...] JSON array from an instance's <Module>.kvp.
+        // Returns null when the line is present but does not parse (e.g. we caught the file
+        // mid-write), so the caller can leave that instance alone instead of treating it
+        // as having no ports and dropping its rules.
         private List<(string Ref, int Proto, int Port, int Range)> ParsePorts(string kvpPath)
         {
             var result = new List<(string, int, int, int)>();
@@ -96,15 +99,18 @@ namespace UnifiPortSync
                     if (port > 0) result.Add((rf, proto, port, range < 1 ? 1 : range));
                 }
             }
-            catch { /* malformed line -> no ports */ }
+            catch { return null; }
             return result;
         }
 
         // Build the set of ports every (non-ADS, non-suspended) instance wants exposed.
         // When onlyInstance is set, restrict to that one instance (used for the live per-instance syncs).
-        public List<DesiredPort> GetDesiredPorts(out string error, string onlyInstance = null)
+        // Instances whose port config could not be read end up in skipped; their rules must
+        // not be treated as orphans.
+        public List<DesiredPort> GetDesiredPorts(out string error, out List<string> skipped, string onlyInstance = null)
         {
             error = null;
+            skipped = new List<string>();
             var list = new List<DesiredPort>();
             var root = FindAmpDataPath();
             if (root == null) { error = "Could not locate AMP data path (instances.json). Set 'AMP data path' in settings."; return list; }
@@ -127,6 +133,15 @@ namespace UnifiPortSync
             }
             Walk(doc.RootElement);
 
+            // An empty result here almost certainly means the file format changed on us
+            // (the ADS entry alone should always be present). Bail out rather than let the
+            // orphan sweep conclude that every rule we manage should go.
+            if (instances.Count == 0)
+            {
+                error = "No instances found in instances.json; skipping the sync as a precaution.";
+                return list;
+            }
+
             foreach (var inst in instances)
             {
                 string name = inst.GetProperty("InstanceName").GetString();
@@ -136,7 +151,9 @@ namespace UnifiPortSync
                 if (inst.TryGetProperty("Suspended", out var s) && s.ValueKind == JsonValueKind.True) continue;
 
                 var kvp = Path.Combine(root, "instances", name, module + ".kvp");
-                foreach (var (rf, proto, port, range) in ParsePorts(kvp))
+                var ports = ParsePorts(kvp);
+                if (ports == null) { skipped.Add(name); continue; }
+                foreach (var (rf, proto, port, range) in ports)
                 {
                     if (IsAdminPort(rf)) continue; // never expose RCON/admin ports
                     list.Add(new DesiredPort
@@ -154,17 +171,31 @@ namespace UnifiPortSync
         public async Task<SyncPlan> ReconcileAsync(bool apply, string onlyInstance = null)
         {
             var plan = new SyncPlan();
-            var desired = GetDesiredPorts(out var err, onlyInstance);
+
+            // Without a prefix we cannot tell our rules from anyone else's, and the orphan
+            // sweep would be a hazard. Refuse to run rather than guess.
+            string prefix = _cfg.RuleNamePrefix ?? "";
+            if (string.IsNullOrWhiteSpace(prefix))
+            {
+                plan.Error = "Rule name prefix is empty; set one so the plugin can recognize its own rules.";
+                return plan;
+            }
+
+            var desired = GetDesiredPorts(out var err, out var skipped, onlyInstance);
             if (err != null) { plan.Error = err; return plan; }
+            if (onlyInstance != null && skipped.Contains(onlyInstance, StringComparer.OrdinalIgnoreCase))
+            {
+                plan.Error = $"Port config for '{onlyInstance}' could not be read; leaving its rules alone until the next sync.";
+                return plan;
+            }
 
             List<PortForward> existing;
             using var client = new UnifiClient(_cfg.Host, _cfg.Port, _cfg.ApiKey, _cfg.SiteName);
             try { existing = await client.GetPortForwardsAsync(); }
             catch (Exception ex) { plan.Error = "UniFi query failed: " + ex.Message; return plan; }
 
-            string prefix = _cfg.RuleNamePrefix ?? "";
-            var ours = existing.Where(f => !string.IsNullOrEmpty(prefix) && (f.Name ?? "").StartsWith(prefix)).ToList();
-            var foreign = existing.Where(f => string.IsNullOrEmpty(prefix) || !(f.Name ?? "").StartsWith(prefix)).ToList();
+            var ours = existing.Where(f => (f.Name ?? "").StartsWith(prefix)).ToList();
+            var foreign = existing.Where(f => !(f.Name ?? "").StartsWith(prefix)).ToList();
 
             // For a targeted sync, only our rules belonging to that instance are in scope for
             // create/update/orphan-removal. The rule name always starts with "<prefix><instance> ".
@@ -193,11 +224,21 @@ namespace UnifiPortSync
                 foreach (var f in foreign.Where(f => ProtoOverlap(f.Proto, d.Proto)))
                 {
                     var fp = ExpandPorts(f.DstPort);
+                    // A rule only counts as covering us if it forwards every protocol we need.
+                    // A tcp-only rule does not cover a tcp_udp port; treat that as a conflict
+                    // so the gap gets reported instead of silently leaving udp closed.
+                    bool sameHost = string.Equals(f.Fwd, _cfg.TargetLanIp, StringComparison.OrdinalIgnoreCase);
+                    bool covers = f.Proto == d.Proto || f.Proto == "tcp_udp";
                     foreach (var p in wanted)
                     {
                         if (!fp.Contains(p)) continue;
-                        if (string.Equals(f.Fwd, _cfg.TargetLanIp, StringComparison.OrdinalIgnoreCase))
+                        if (sameHost && covers)
                             coveredSameHost.Add(p);
+                        else if (sameHost)
+                        {
+                            if (conflictPorts.Add(p))
+                                plan.Conflicts.Add($"Port {p} for instance '{d.Instance}' needs {d.Proto} but rule '{f.Name}' only forwards {f.Proto}. Extend that rule to {ProtoLabel(d.Proto)} or remove it so the plugin can manage the port.");
+                        }
                         else if (conflictPorts.Add(p))
                             plan.Conflicts.Add($"Port {p}/{d.Proto} for instance '{d.Instance}' is already forwarded to another host ({f.Fwd}) by rule '{f.Name}', so it was skipped to avoid overwriting it.");
                     }
@@ -236,12 +277,15 @@ namespace UnifiPortSync
 
             // Orphans: our forwards with no matching desired rule -> remove. On a targeted
             // sync, only consider this instance's rules so other instances aren't affected.
+            // Rules of instances whose config we could not read are off limits too.
             var wantedNames = rules.Select(d => d.RuleName).ToHashSet();
+            var skipPrefixes = skipped.Select(n => $"{prefix}{n} ").ToList();
             var orphanScope = instScope == null
                 ? ours
                 : ours.Where(f => (f.Name ?? "").StartsWith(instScope));
             foreach (var f in orphanScope.Where(f => !wantedNames.Contains(f.Name)))
             {
+                if (skipPrefixes.Any(sp => (f.Name ?? "").StartsWith(sp))) continue;
                 plan.ToDelete.Add(f.Name);
                 if (apply && !string.IsNullOrEmpty(f.Id)) await client.DeletePortForwardAsync(f.Id);
             }

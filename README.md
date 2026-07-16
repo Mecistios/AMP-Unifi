@@ -19,7 +19,9 @@ Author: Mecistios. Built for AMP 2.8 (.NET 8).
 
 The plugin reacts to changes as they happen. It watches AMP's instance config on disk, so creating an instance, changing a port or deleting an instance triggers a sync within a few seconds. Only the changed instance's rules are looked at, so the rest of your forwards stay untouched.
 
-A timer runs in the background as a fallback (default every 15 minutes). It does a full pass over all instances to catch drift, or anything the live sync missed. Set the interval to 0 to turn it off and sync manually only. You can also run a sync at any time with the Sync Now button in the settings.
+A timer runs in the background as a fallback (default every 15 minutes). It does a full pass over all instances to catch drift, or anything the live sync missed. Set the interval to 0 to turn it off and sync manually only. Changing the interval takes effect after the instance restarts. You can also run a sync at any time with the Sync Now button in the settings.
+
+On Linux the watcher takes one inotify watch per folder under `instances/`. On systems with a low `fs.inotify.max_user_watches` limit it may fail to start; the plugin logs this and falls back to the timer.
 
 ## Requirements
 
@@ -63,14 +65,14 @@ Open the instance configuration and go to Instance Deployment, tab Unifi Network
 
 | Setting | Meaning |
 |---|---|
-| Enable UniFi Port Sync | Master switch. When off, nothing is sent to UniFi. |
+| Enable UniFi Port Sync | Master switch. When off, no syncs run and no changes are made. |
 | UniFi Controller Host / IP | Hostname or IP of the UniFi OS console. |
 | UniFi Controller Port | HTTPS port of the console (usually 443). |
 | UniFi API Key | Control Plane API key (stored encrypted). |
 | UniFi Site | Site identifier. Use Test Connection to list your sites. |
 | Forward Target LAN IP | The LAN IP that game ports should forward to. |
 | Sync Interval (minutes) | How often the fallback timer runs. 0 turns it off. |
-| Rule Name Prefix | Prefix for the rules this plugin owns (default `AMP:`). |
+| Rule Name Prefix | Prefix for the rules this plugin owns (default `AMP:`). Must not be empty. |
 | AMP Data Path | Optional. Leave blank to auto detect `instances.json`. |
 
 ## Endpoints

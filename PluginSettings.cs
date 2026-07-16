@@ -10,9 +10,9 @@ namespace UnifiPortSync
         [Description("Instance Deployment")]
         public class UnifiSettings : SettingSectionStore
         {
-            // Master on/off. When false the plugin does nothing (no calls to UniFi).
+            // Master on/off. When false no syncs run and nothing is changed on the gateway.
             [WebSetting("Enable UniFi Port Sync",
-                "When enabled, AMP will keep UniFi port-forwards in sync with instance ports (create/update/remove).",
+                "Master switch. When enabled, AMP keeps UniFi port-forwards in sync with instance ports (create/update/remove). When disabled no syncs run and no changes are made.",
                 false, "", "", "unifi,ports,sync", false, "", "", "", "Unifi Network Automation",10)]
             [InlineAction("UnifiPortSync", "RunSync", "Sync Now", "", false)]
             public bool Enabled = false;
@@ -45,12 +45,12 @@ namespace UnifiPortSync
             public string TargetLanIp = "";
 
             [WebSetting("Sync Interval (minutes)",
-                "How often to automatically reconcile ports. Set to 0 to only sync manually.",
-                false, "", "", "unifi,interval", false, "5", "min", "", "Unifi Network Automation",70)]
-            public int SyncIntervalMinutes = 5;
+                "How often the fallback timer does a full sweep. Changes to instances are already picked up live, so this only catches drift. Set to 0 to turn the timer off. A new interval takes effect after the instance restarts.",
+                false, "", "", "unifi,interval", false, "15", "min", "", "Unifi Network Automation",70)]
+            public int SyncIntervalMinutes = 15;
 
             [WebSetting("Rule Name Prefix",
-                "Prefix for port-forward rules this plugin creates, so it only manages its own rules.",
+                "Prefix for port-forward rules this plugin creates, so it only manages its own rules. Must not be empty.",
                 false, "", "", "unifi,prefix", false, "AMP:", "", "", "Unifi Network Automation",80)]
             public string RuleNamePrefix = "AMP:";
 

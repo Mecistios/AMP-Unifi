@@ -79,6 +79,7 @@ namespace UnifiPortSync
                 _watcher.Created += OnPortConfigChanged;
                 _watcher.Deleted += OnPortConfigChanged;
                 _watcher.Renamed += OnPortConfigChanged;
+                _watcher.Error += OnWatcherError;
                 _watcher.EnableRaisingEvents = true;
                 _log.Info("UniFi sync: watching instance port config for changes.");
             }
@@ -107,10 +108,19 @@ namespace UnifiPortSync
             return string.Equals(name, "instances", StringComparison.OrdinalIgnoreCase) ? null : name;
         }
 
+        // The watcher's event buffer can overflow when a lot changes at once. Events got
+        // lost at that point, so catch up with a full sweep instead of waiting for the timer.
+        private void OnWatcherError(object sender, ErrorEventArgs e)
+        {
+            _log.Warning($"UniFi sync: file watcher error ({e.GetException()?.Message}); running a full sweep to catch up.");
+            _ = Tick();
+        }
+
         private async Task FlushPending()
         {
             List<string> names;
             lock (_pendingLock) { names = _pending.ToList(); _pending.Clear(); }
+            if (!_settings.Unifi.Enabled) return;
             foreach (var name in names)
             {
                 try { await RunReconcileAsync(apply: true, name); }

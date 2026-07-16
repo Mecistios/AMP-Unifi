@@ -57,6 +57,10 @@ namespace UnifiPortSync
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey) || string.IsNullOrWhiteSpace(u.TargetLanIp))
                 return new Dictionary<string, object> { ["success"] = false, ["message"] = "Set Host, API key and Target LAN IP first." };
+            // A dry-run is harmless, but applying changes while the sync is switched off would
+            // contradict the master switch.
+            if (apply && !u.Enabled)
+                return new Dictionary<string, object> { ["success"] = false, ["message"] = "UniFi Port Sync is disabled. Enable it before applying changes (a dry-run works without it)." };
             try
             {
                 var plan = await _plugin.RunReconcileAsync(apply);
@@ -108,6 +112,8 @@ namespace UnifiPortSync
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey) || string.IsNullOrWhiteSpace(u.TargetLanIp))
                 return ActionResult.FailureReason((FormattableString)$"Set Host, API key and Target LAN IP first.", "", (FormattableString)null);
+            if (!u.Enabled)
+                return ActionResult.FailureReason((FormattableString)$"Enable UniFi Port Sync first, then run the sync.", "", (FormattableString)null);
 
             var plan = await _plugin.RunReconcileAsync(apply: true);
             if (plan.Error != null)
