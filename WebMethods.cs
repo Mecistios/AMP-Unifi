@@ -20,10 +20,16 @@ namespace UnifiPortSync
             _log = log;
         }
 
+        // Shown when an AMP update outdated this build; the settings cannot load then, so
+        // every other guard would misreport the problem as missing configuration.
+        private const string MismatchMessage = "This plugin build does not match the installed AMP version. Update the plugin from https://github.com/Mecistios/AMP-Unifi/releases";
+
         [JSONMethod("Test the connection to the UniFi controller and list available sites.",
             "Object with success flag, message and the discovered sites.")]
         public async Task<object> TestUnifiConnection()
         {
+            if (_plugin.BuildMismatch)
+                return new Dictionary<string, object> { ["success"] = false, ["message"] = MismatchMessage };
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey))
                 return new Dictionary<string, object> { ["success"] = false, ["message"] = "Set Host and API key first." };
@@ -54,6 +60,8 @@ namespace UnifiPortSync
             "Object with the sync plan (create/update/delete/conflicts).")]
         public async Task<object> SyncNow(bool apply = false)
         {
+            if (_plugin.BuildMismatch)
+                return new Dictionary<string, object> { ["success"] = false, ["message"] = MismatchMessage };
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey) || string.IsNullOrWhiteSpace(u.TargetLanIp))
                 return new Dictionary<string, object> { ["success"] = false, ["message"] = "Set Host, API key and Target LAN IP first." };
@@ -91,6 +99,11 @@ namespace UnifiPortSync
         [JSONMethod("Test the UniFi connection and list the available sites.", "Success/failure with the site list.")]
         public async Task<ActionResult> TestConnection()
         {
+            if (_plugin.BuildMismatch)
+            {
+                _plugin.PushPopup("testfail", MismatchMessage);
+                return ActionResult.FailureReason((FormattableString)$"{MismatchMessage}", "", (FormattableString)null);
+            }
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey))
             {
@@ -117,6 +130,11 @@ namespace UnifiPortSync
         [JSONMethod("Run a sync now and apply any changes to UniFi.", "Success/failure with a short summary.")]
         public async Task<ActionResult> RunSync()
         {
+            if (_plugin.BuildMismatch)
+            {
+                _plugin.PushPopup("syncfail", MismatchMessage);
+                return ActionResult.FailureReason((FormattableString)$"{MismatchMessage}", "", (FormattableString)null);
+            }
             var u = _settings.Unifi;
             if (string.IsNullOrWhiteSpace(u.Host) || string.IsNullOrWhiteSpace(u.ApiKey) || string.IsNullOrWhiteSpace(u.TargetLanIp))
             {
@@ -147,6 +165,8 @@ namespace UnifiPortSync
         [JSONMethod("List the port-forward rules on the configured UniFi site.", "Object with the current forwards.")]
         public async Task<object> ListUnifiPortForwards()
         {
+            if (_plugin.BuildMismatch)
+                return new Dictionary<string, object> { ["success"] = false, ["message"] = MismatchMessage };
             try
             {
                 using var c = _plugin.CreateClient();

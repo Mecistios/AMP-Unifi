@@ -22,6 +22,7 @@ namespace UnifiPortSync
         private readonly HashSet<string> _pending = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly object _pendingLock = new object();
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
+        private bool _buildMismatch;
 
         public PluginMain(ILogger log, IConfigSerializer config, IAMPInstanceInfo info, IPluginMessagePusher messages, IRunningTasksManager tasks)
         {
@@ -43,6 +44,12 @@ namespace UnifiPortSync
         // config so a create/port-change/remove reconciles right away instead of at the next tick.
         public override Task PostInitAsync()
         {
+            if (!SettingsAttributesResolve())
+            {
+                _buildMismatch = true;
+                _log.Error("UniFi Port Sync: this AMP update changed the plugin interfaces, so this build of the plugin no longer matches and its settings cannot load. Sync stays off. Download the latest release from https://github.com/Mecistios/AMP-Unifi/releases and replace the plugin DLL.");
+                return Task.CompletedTask;
+            }
             var mins = _settings.Unifi.SyncIntervalMinutes;
             if (mins > 0)
             {
@@ -52,6 +59,23 @@ namespace UnifiPortSync
             }
             StartWatcher();
             return Task.CompletedTask;
+        }
+
+        // An AMP update can change the WebSettingAttribute ctor. Attribute ctor signatures are
+        // baked into a compiled plugin, so after such an update every attribute lookup on our
+        // settings throws MissingMethodException and the settings can neither load nor save
+        // (AMP 2.8.0.4 did exactly this). Probe one of our own fields up front so we can log
+        // plainly that a newer plugin build is needed instead of leaving cryptic errors.
+        private static bool SettingsAttributesResolve()
+        {
+            try
+            {
+                var field = typeof(PluginSettings.UnifiSettings).GetField(nameof(PluginSettings.UnifiSettings.Enabled));
+                Attribute.GetCustomAttribute(field, typeof(WebSettingAttribute));
+                return true;
+            }
+            catch (MemberAccessException) { return false; }
+            catch (TypeLoadException) { return false; }
         }
 
         // AMP has no plugin-facing event for a port/config change (only version upgrades raise
@@ -135,6 +159,9 @@ namespace UnifiPortSync
             catch (Exception ex) { _log.Warning($"Scheduled UniFi sync errored: {ex.Message}"); }
         }
 
+        // True when the startup probe found that this build no longer matches the running AMP.
+        internal bool BuildMismatch => _buildMismatch;
+
         // Lets the web methods pop a result dialog in the browser. AMP does not reliably
         // show the text of a successful ActionResult, so the buttons push their outcome
         // through the frontend script instead. RequiredPermission must be null: the
@@ -159,6 +186,8 @@ namespace UnifiPortSync
         // runs at a time. When instanceName is set, only that instance's rules are touched.
         internal async Task<SyncPlan> RunReconcileAsync(bool apply, string instanceName = null)
         {
+            if (_buildMismatch)
+                return new SyncPlan { Error = "This plugin build does not match the installed AMP version. Update the plugin from https://github.com/Mecistios/AMP-Unifi/releases" };
             await _gate.WaitAsync();
             try
             {
