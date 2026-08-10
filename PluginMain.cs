@@ -17,7 +17,7 @@ namespace UnifiPortSync
         private readonly IRunningTasksManager _tasks;
 
         private Timer _timer;
-        private FileSystemWatcher _watcher;
+        private readonly List<FileSystemWatcher> _watchers = new List<FileSystemWatcher>();
         private Timer _debounce;
         private readonly HashSet<string> _pending = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly object _pendingLock = new object();
@@ -80,32 +80,37 @@ namespace UnifiPortSync
 
         // AMP has no plugin-facing event for a port/config change (only version upgrades raise
         // one), but every change rewrites the instance's <Module>.kvp on disk. Create and remove
-        // add or drop those files too, so we watch the instances folder and reconcile on change.
-        // The timer stays on as a full-sweep fallback in case the folder can't be located.
+        // add or drop those files too, so we watch every folder that holds instances (the
+        // default dir plus any datastores) and reconcile on change. The timer stays on as a
+        // full-sweep fallback in case none of the folders can be located.
         private void StartWatcher()
         {
             try
             {
-                var dir = new UnifiReconciler(ToConfig(_settings.Unifi)).ResolveInstancesDir();
-                if (dir == null || !Directory.Exists(dir))
+                var dirs = new UnifiReconciler(ToConfig(_settings.Unifi)).ResolveInstanceDirs();
+                if (dirs.Count == 0)
                 {
                     _log.Info("UniFi sync: instances folder not found, relying on the timer.");
                     return;
                 }
                 // Coalesce the burst of writes a single config save produces into one reconcile.
                 _debounce = new Timer(_ => { _ = FlushPending(); }, null, Timeout.Infinite, Timeout.Infinite);
-                _watcher = new FileSystemWatcher(dir, "*.kvp")
+                foreach (var dir in dirs)
                 {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
-                };
-                _watcher.Changed += OnPortConfigChanged;
-                _watcher.Created += OnPortConfigChanged;
-                _watcher.Deleted += OnPortConfigChanged;
-                _watcher.Renamed += OnPortConfigChanged;
-                _watcher.Error += OnWatcherError;
-                _watcher.EnableRaisingEvents = true;
-                _log.Info("UniFi sync: watching instance port config for changes.");
+                    var watcher = new FileSystemWatcher(dir, "*.kvp")
+                    {
+                        IncludeSubdirectories = true,
+                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
+                    };
+                    watcher.Changed += OnPortConfigChanged;
+                    watcher.Created += OnPortConfigChanged;
+                    watcher.Deleted += OnPortConfigChanged;
+                    watcher.Renamed += OnPortConfigChanged;
+                    watcher.Error += OnWatcherError;
+                    watcher.EnableRaisingEvents = true;
+                    _watchers.Add(watcher);
+                }
+                _log.Info($"UniFi sync: watching {dirs.Count} instance folder(s) for port changes.");
             }
             catch (Exception ex)
             {
@@ -113,7 +118,7 @@ namespace UnifiPortSync
             }
         }
 
-        // A .kvp under instances/<name>/ changed, so queue that instance for a targeted reconcile.
+        // A .kvp under a watched folder changed, so queue that instance for a targeted reconcile.
         private void OnPortConfigChanged(object sender, FileSystemEventArgs e)
         {
             if (!_settings.Unifi.Enabled) return;
@@ -123,7 +128,8 @@ namespace UnifiPortSync
             _debounce?.Change(TimeSpan.FromSeconds(2), Timeout.InfiniteTimeSpan);
         }
 
-        // instances/<name>/<Module>.kvp -> <name>
+        // <parent>/<name>/<Module>.kvp -> <name>; the folder name is the instance name in
+        // both the default layout and on a datastore.
         private static string InstanceFromKvpPath(string fullPath)
         {
             var folder = Path.GetDirectoryName(fullPath);

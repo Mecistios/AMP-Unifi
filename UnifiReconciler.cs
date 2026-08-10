@@ -59,11 +59,62 @@ namespace UnifiPortSync
             return null;
         }
 
-        // The folder holding the per-instance subfolders (the instances dir). Null if not found.
-        public string ResolveInstancesDir()
+        // Every folder that holds instance subfolders: the default instances dir plus any
+        // datastore locations named by the Path entries in instances.json. Instances can be
+        // created on a separate datastore, so watching only the default dir would miss them.
+        public List<string> ResolveInstanceDirs()
         {
+            var dirs = new List<string>();
             var root = FindAmpDataPath();
-            return root == null ? null : Path.Combine(root, "instances");
+            if (root == null) return dirs;
+
+            void Add(string d)
+            {
+                if (d != null && Directory.Exists(d) && !dirs.Contains(d)) dirs.Add(d);
+            }
+            Add(Path.Combine(root, "instances"));
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "instances.json")));
+                foreach (var inst in CollectInstances(doc.RootElement))
+                {
+                    var dataDir = InstanceDataDir(inst);
+                    if (dataDir != null) Add(Path.GetDirectoryName(dataDir.TrimEnd('/', '\\')));
+                }
+            }
+            catch { /* unreadable json, stick with the default dir */ }
+            return dirs;
+        }
+
+        // instances.json nests the instance objects under per-target entries; pull them all out.
+        private static List<JsonElement> CollectInstances(JsonElement rootEl)
+        {
+            var found = new List<JsonElement>();
+            void Walk(JsonElement e)
+            {
+                if (e.ValueKind == JsonValueKind.Object)
+                {
+                    if (e.TryGetProperty("InstanceName", out _) && e.TryGetProperty("Module", out _)) found.Add(e);
+                    foreach (var p in e.EnumerateObject()) Walk(p.Value);
+                }
+                else if (e.ValueKind == JsonValueKind.Array)
+                    foreach (var i in e.EnumerateArray()) Walk(i);
+            }
+            Walk(rootEl);
+            return found;
+        }
+
+        // The instance's own data directory as recorded in instances.json. Not always
+        // <root>/instances/<name>: an instance made on a datastore lives wherever the
+        // datastore points.
+        private static string InstanceDataDir(JsonElement inst)
+        {
+            if (inst.TryGetProperty("Path", out var p) && p.ValueKind == JsonValueKind.String)
+            {
+                var val = p.GetString();
+                if (!string.IsNullOrWhiteSpace(val)) return val;
+            }
+            return null;
         }
 
         private static string ProtoName(int p) => p switch { 0 => "tcp", 1 => "udp", 2 => "tcp_udp", _ => "tcp_udp" };
@@ -120,18 +171,7 @@ namespace UnifiPortSync
             try { doc = JsonDocument.Parse(File.ReadAllText(instancesJson)); }
             catch (Exception ex) { error = "Failed to read instances.json: " + ex.Message; return list; }
 
-            var instances = new List<JsonElement>();
-            void Walk(JsonElement e)
-            {
-                if (e.ValueKind == JsonValueKind.Object)
-                {
-                    if (e.TryGetProperty("InstanceName", out _) && e.TryGetProperty("Module", out _)) instances.Add(e);
-                    foreach (var p in e.EnumerateObject()) Walk(p.Value);
-                }
-                else if (e.ValueKind == JsonValueKind.Array)
-                    foreach (var i in e.EnumerateArray()) Walk(i);
-            }
-            Walk(doc.RootElement);
+            var instances = CollectInstances(doc.RootElement);
 
             // An empty result here almost certainly means the file format changed on us
             // (the ADS entry alone should always be present). Bail out rather than let the
@@ -150,7 +190,10 @@ namespace UnifiPortSync
                 if (string.Equals(module, "ADS", StringComparison.OrdinalIgnoreCase)) continue; // skip controller
                 if (inst.TryGetProperty("Suspended", out var s) && s.ValueKind == JsonValueKind.True) continue;
 
-                var kvp = Path.Combine(root, "instances", name, module + ".kvp");
+                // Prefer the instance's own Path from instances.json; it differs from the
+                // default layout when the instance sits on a datastore.
+                var instDir = InstanceDataDir(inst) ?? Path.Combine(root, "instances", name);
+                var kvp = Path.Combine(instDir, module + ".kvp");
                 var ports = ParsePorts(kvp);
                 if (ports == null) { skipped.Add(name); continue; }
                 foreach (var (rf, proto, port, range) in ports)

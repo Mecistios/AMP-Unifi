@@ -6,7 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>UnifiPortSync</AssemblyName>
     <RootNamespace>UnifiPortSync</RootNamespace>
-    <AssemblyVersion>0.2.5.0</AssemblyVersion>
+    <AssemblyVersion>0.2.6.0</AssemblyVersion>
     <Company>Mecistios</Company>
     <!-- ModuleShared is a build-time reference only; AMP ships it at runtime. -->
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
