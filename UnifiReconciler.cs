@@ -127,6 +127,31 @@ namespace UnifiPortSync
             return r.Contains("rcon") || r.Contains("admin") || r.Contains("echo");
         }
 
+        // Module names and kvp filenames do not always match: module "Minecraft" writes
+        // MinecraftModule.kvp and "ADS" writes ADSModule.kvp, while "GenericModule" matches
+        // as-is. Try the plain spelling first, then with the Module suffix.
+        private static string ResolveKvpPath(string instDir, string module)
+        {
+            var kvp = Path.Combine(instDir, module + ".kvp");
+            if (File.Exists(kvp)) return kvp;
+            var alt = Path.Combine(instDir, module + "Module.kvp");
+            return File.Exists(alt) ? alt : kvp;
+        }
+
+        // The dedicated Minecraft module has no App.Ports array; its game port is a single
+        // Minecraft.PortNumber value. Turn that into one desired port entry. Forwarded as
+        // tcp+udp so an enabled query port is covered too.
+        private List<(string Ref, int Proto, int Port, int Range)> ParseMinecraftPorts(string kvpPath)
+        {
+            var result = new List<(string, int, int, int)>();
+            if (!File.Exists(kvpPath)) return result;
+            string line = File.ReadLines(kvpPath).FirstOrDefault(l => l.StartsWith("Minecraft.PortNumber="));
+            if (line == null) return result;
+            if (!int.TryParse(line.Substring("Minecraft.PortNumber=".Length).Trim(), out var port)) return null;
+            if (port > 0) result.Add(("GamePort", 2, port, 1));
+            return result;
+        }
+
         // Parse the App.Ports=[...] JSON array from an instance's <Module>.kvp.
         // Returns null when the line is present but does not parse (e.g. we caught the file
         // mid-write), so the caller can leave that instance alone instead of treating it
@@ -193,8 +218,10 @@ namespace UnifiPortSync
                 // Prefer the instance's own Path from instances.json; it differs from the
                 // default layout when the instance sits on a datastore.
                 var instDir = InstanceDataDir(inst) ?? Path.Combine(root, "instances", name);
-                var kvp = Path.Combine(instDir, module + ".kvp");
-                var ports = ParsePorts(kvp);
+                var kvp = ResolveKvpPath(instDir, module);
+                var ports = string.Equals(module, "Minecraft", StringComparison.OrdinalIgnoreCase)
+                    ? ParseMinecraftPorts(kvp)
+                    : ParsePorts(kvp);
                 if (ports == null) { skipped.Add(name); continue; }
                 foreach (var (rf, proto, port, range) in ports)
                 {
