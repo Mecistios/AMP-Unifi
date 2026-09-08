@@ -185,7 +185,15 @@ namespace UnifiPortSync
         {
             Host = u.Host, Port = u.Port, ApiKey = u.ApiKey,
             SiteName = u.SiteName, TargetLanIp = u.TargetLanIp,
+            Interface = InterfaceValue(u.Interface),
             RuleNamePrefix = u.RuleNamePrefix, AmpDataPath = u.AmpDataPath
+        };
+
+        private static string InterfaceValue(WanInterface i) => i switch
+        {
+            WanInterface.Wan2 => "wan2",
+            WanInterface.All => "both",
+            _ => "wan"
         };
 
         // Shared entry point used by the timer, the Sync button and the file watcher. Only one

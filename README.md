@@ -71,6 +71,7 @@ Open the instance configuration and go to Instance Deployment, tab Unifi Network
 | UniFi API Key | Control Plane API key (stored encrypted). |
 | UniFi Site | Site identifier. Use Test Connection to list your sites. |
 | Forward Target LAN IP | The LAN IP that game ports should forward to. |
+| WAN Interface | WAN 1, WAN 2 or All WANs. For multi-WAN gateways; single WAN setups keep WAN 1. Changing it updates the existing rules on the next sync. |
 | Sync Interval (minutes) | How often the fallback timer runs. 0 turns it off. |
 | Rule Name Prefix | Prefix for the rules this plugin owns (default `AMP:`). Must not be empty. |
 | AMP Data Path | Optional. Leave blank to auto detect `instances.json`. |

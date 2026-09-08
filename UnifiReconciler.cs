@@ -337,7 +337,8 @@ namespace UnifiPortSync
                     plan.ToCreate.Add($"{d.RuleName} -> {_cfg.TargetLanIp}:{spec}/{d.Proto}");
                     if (apply) await client.CreatePortForwardAsync(ToRule(d, spec));
                 }
-                else if (mine.Proto != d.Proto || mine.DstPort != spec || mine.FwdPort != spec || mine.Fwd != _cfg.TargetLanIp || !mine.Enabled)
+                else if (mine.Proto != d.Proto || mine.DstPort != spec || mine.FwdPort != spec || mine.Fwd != _cfg.TargetLanIp
+                         || !string.Equals(mine.Interface ?? "wan", _cfg.Interface, StringComparison.OrdinalIgnoreCase) || !mine.Enabled)
                 {
                     plan.ToUpdate.Add($"{d.RuleName} -> {_cfg.TargetLanIp}:{spec}/{d.Proto}");
                     if (apply) { var r = ToRule(d, spec); r.Id = mine.Id; await client.UpdatePortForwardAsync(r); }
@@ -366,7 +367,7 @@ namespace UnifiPortSync
 
         private PortForward ToRule(DesiredRule d, string portSpec) => new PortForward
         {
-            Name = d.RuleName, Enabled = true, Interface = "wan", Src = "any",
+            Name = d.RuleName, Enabled = true, Interface = _cfg.Interface, Src = "any",
             Proto = d.Proto, DstPort = portSpec, Fwd = _cfg.TargetLanIp, FwdPort = portSpec, DestinationIp = "any"
         };
 

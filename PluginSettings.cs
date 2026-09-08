@@ -5,6 +5,17 @@ namespace UnifiPortSync
 {
     // Persisted plugin configuration. [Description(...)] is the Configuration menu item;
     // the WebSetting subcategory (below) is the tab shown within it.
+    // Which WAN the forwards should listen on. Values map to UniFi's pfwd_interface.
+    public enum WanInterface
+    {
+        [EnumDisplayName("WAN 1", "", "")]
+        Wan1 = 0,
+        [EnumDisplayName("WAN 2", "", "")]
+        Wan2 = 10,
+        [EnumDisplayName("All WANs", "", "")]
+        All = 20
+    }
+
     internal class PluginSettings : SettingStore
     {
         [Description("Instance Deployment")]
@@ -43,6 +54,11 @@ namespace UnifiPortSync
                 "The LAN IP of this machine that game ports should be forwarded to (where AMP instances listen).",
                 false, "", "", "unifi,target,ip", false, "192.168.1.50", "", "", "Unifi Network Automation",60)]
             public string TargetLanIp = "";
+
+            [WebSetting("WAN Interface",
+                "Which WAN the forwards listen on. Only matters with a multi-WAN gateway; single WAN setups keep WAN 1. Changing this updates the existing rules on the next sync.",
+                false, "", "", "unifi,wan,interface", false, "", "", "", "Unifi Network Automation",65)]
+            public WanInterface Interface = WanInterface.Wan1;
 
             [WebSetting("Sync Interval (minutes)",
                 "How often the fallback timer does a full sweep. Changes to instances are already picked up live, so this only catches drift. Set to 0 to turn the timer off. A new interval takes effect after the instance restarts.",

@@ -9,6 +9,8 @@ namespace UnifiPortSync
         public string ApiKey = "";
         public string SiteName = "default";
         public string TargetLanIp = "";
+        // UniFi pfwd_interface value: wan, wan2 or both.
+        public string Interface = "wan";
         public string RuleNamePrefix = "AMP:";
         public string AmpDataPath = "";
     }
