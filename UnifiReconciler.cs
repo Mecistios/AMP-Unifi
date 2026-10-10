@@ -167,16 +167,27 @@ namespace UnifiPortSync
             {
                 using var doc = JsonDocument.Parse(json);
                 foreach (var e in doc.RootElement.EnumerateArray())
-                {
-                    int proto = e.TryGetProperty("Protocol", out var pr) ? pr.GetInt32() : 2;
-                    int port = e.TryGetProperty("Port", out var po) ? po.GetInt32() : 0;
-                    int range = e.TryGetProperty("Range", out var ra) ? ra.GetInt32() : 1;
-                    string rf = e.TryGetProperty("Ref", out var re) ? (re.GetString() ?? "Port") : "Port";
-                    if (port > 0) result.Add((rf, proto, port, range < 1 ? 1 : range));
-                }
+                    AddPort(e, 0, result);
             }
             catch { return null; }
             return result;
+        }
+
+        // Some templates nest ports under a parent, e.g. the ARK peer port (game port + 1).
+        // AMP places a child at parent port + Offset, so do the same and walk them too.
+        private static void AddPort(JsonElement e, int parentPort, List<(string, int, int, int)> result)
+        {
+            int proto = e.TryGetProperty("Protocol", out var pr) ? pr.GetInt32() : 2;
+            int port = e.TryGetProperty("Port", out var po) ? po.GetInt32() : 0;
+            int range = e.TryGetProperty("Range", out var ra) ? ra.GetInt32() : 1;
+            int offset = e.TryGetProperty("Offset", out var of) ? of.GetInt32() : 0;
+            string rf = e.TryGetProperty("Ref", out var re) ? (re.GetString() ?? "Port") : "Port";
+            if (parentPort > 0 && offset != 0) port = parentPort + offset;
+            if (port > 0) result.Add((rf, proto, port, range < 1 ? 1 : range));
+
+            if (e.TryGetProperty("ChildPorts", out var kids) && kids.ValueKind == JsonValueKind.Array)
+                foreach (var c in kids.EnumerateArray())
+                    AddPort(c, port, result);
         }
 
         // Build the set of ports every (non-ADS, non-suspended) instance wants exposed.
