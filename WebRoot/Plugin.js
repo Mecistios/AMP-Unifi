@@ -7,6 +7,7 @@ this.plugin = {
             testok: ["UniFi connection test", UI.Icons.Info],
             testfail: ["UniFi connection test", UI.Icons.Exclamation],
             syncok: ["UniFi port sync", UI.Icons.Info],
+            syncpreview: ["UniFi port sync preview", UI.Icons.Info],
             syncfail: ["UniFi port sync", UI.Icons.Exclamation]
         };
         var kind = kinds[message];

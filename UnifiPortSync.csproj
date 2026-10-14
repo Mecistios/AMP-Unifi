@@ -6,12 +6,24 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>UnifiPortSync</AssemblyName>
     <RootNamespace>UnifiPortSync</RootNamespace>
-    <AssemblyVersion>0.2.9.0</AssemblyVersion>
+    <AssemblyVersion>0.3.0.0</AssemblyVersion>
     <Company>Mecistios</Company>
     <!-- ModuleShared is a build-time reference only; AMP ships it at runtime. -->
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The unit tests live in their own project. -->
+    <Compile Remove="tests/**" />
+    <None Remove="tests/**" />
+    <InternalsVisibleTo Include="UnifiPortSync.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The frontend script AMP serves from the plugin folder; ship it next to the DLL. -->
+    <None Include="WebRoot/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Copy ModuleShared.dll from your AMP installation into lib/. It is a build-time
