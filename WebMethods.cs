@@ -200,7 +200,7 @@ namespace UnifiPortSync
                 var l = items.ToList();
                 if (l.Count == 0) return;
                 lines.Add($"{title}:");
-                lines.AddRange(l.Select(i => "  • " + i));
+                lines.AddRange(l.Select(i => "  - " + i));
                 lines.Add("");
             }
             Section("Would create", plan.ToCreate);
@@ -239,11 +239,11 @@ namespace UnifiPortSync
 
             var summary = $"Sync complete. Created {plan.ToCreate.Count}, updated {plan.ToUpdate.Count}, removed {plan.ToDelete.Count}, {plan.AlreadyForwarded.Count} already OK.";
             if (plan.Failed.Count > 0)
-                summary += $"\n\n{plan.Failed.Count} change(s) were refused by UniFi:\n" + string.Join("\n", plan.Failed.Select(f => "  • " + f));
+                summary += $"\n\n{plan.Failed.Count} change(s) were refused by UniFi:\n" + string.Join("\n", plan.Failed.Select(f => "  - " + f));
             if (plan.Conflicts.Count > 0)
-                summary += $"\n\n{plan.Conflicts.Count} conflict(s) were left alone:\n" + string.Join("\n", plan.Conflicts.Select(c => "  • " + c));
+                summary += $"\n\n{plan.Conflicts.Count} conflict(s) were left alone:\n" + string.Join("\n", plan.Conflicts.Select(c => "  - " + c));
             if (plan.Skipped.Count > 0)
-                summary += $"\n\n{plan.Skipped.Count} instance(s) skipped because their port config couldn't be read:\n" + string.Join("\n", plan.Skipped.Select(kv => $"  • {kv.Key}: {kv.Value}"));
+                summary += $"\n\n{plan.Skipped.Count} instance(s) skipped because their port config couldn't be read:\n" + string.Join("\n", plan.Skipped.Select(kv => $"  - {kv.Key}: {kv.Value}"));
             var problems = plan.Failed.Count + plan.Conflicts.Count + plan.Skipped.Count > 0;
             _plugin.PushPopup(problems ? "syncfail" : "syncok", summary);
             return new ActionResult(plan.Failed.Count == 0, (FormattableString)$"{summary}", "", (FormattableString)null);

@@ -78,7 +78,7 @@ namespace UnifiPortSync
 
             [WebSetting("Never Forward Ports Named",
                 "Extra comma-separated words. A port whose name contains one of them is never forwarded. RCON, admin, telnet, console, control and echo ports are always left closed.",
-                false, "", "", "unifi,exclude,ports", false, "restapi, webui", "", "", "Unifi Network Automation",85)]
+                false, "", "", "unifi,exclude,ports", false, "", "", "", "Unifi Network Automation",85)]
             public string ExcludedPortNames = "";
 
             [WebSetting("AMP Data Path (optional)",
