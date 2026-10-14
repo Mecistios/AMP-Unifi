@@ -13,5 +13,9 @@ namespace UnifiPortSync
         public string Interface = "wan";
         public string RuleNamePrefix = "AMP:";
         public string AmpDataPath = "";
+        // Extra comma-separated words; a port whose Ref contains one is never forwarded.
+        public string ExcludedPortNames = "";
+        // Optional SHA-256 fingerprint of the controller certificate.
+        public string CertFingerprint = "";
     }
 }

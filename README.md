@@ -8,20 +8,25 @@ Author: Mecistios. Built for AMP 2.8 (.NET 8).
 
 - Reads each AMP instance and the ports it uses (from the instance's `App.Ports`). The ADS controller and suspended instances are skipped.
 - Groups an instance's ports per protocol into one forward rule (UDP together, TCP together, and a separate rule when a port needs both).
-- Leaves RCON and admin ports closed. Those are never forwarded to the internet.
+- Leaves RCON, admin, telnet, console and control-panel ports closed. Those are never forwarded to the internet. You can add more words to exclude in the settings.
 - Compares that against the forwards already on your UniFi site:
-  - a port already forwarded to the same host is left as it is
-  - a port forwarded to a different host is reported as a conflict and not touched
-  - only the ports that are genuinely missing get a forward created
+  - a port already forwarded to the same host (enabled, from any source, on the same WAN) is left as it is
+  - a port forwarded to a different host, or only partly forwarded (wrong protocol, other WAN, limited source), is reported as a conflict and not touched
+  - when two instances use the same port, the one already holding it keeps it and the other is reported
+  - only the ports that are genuinely missing get a forward created; consecutive ports are written as ranges
+- If UniFi refuses one change, the rest of the sync still runs and the refusal is reported with UniFi's own reason.
+- An instance whose port config can't be read is skipped and its existing rules are left alone.
 - Only manages its own rules (matched by a name prefix), so anything you set up by hand is never changed or removed.
 
 ## Syncing
 
-The plugin reacts to changes as they happen. It watches AMP's instance config on disk, so creating an instance, changing a port or deleting an instance triggers a sync within a few seconds. Only the changed instance's rules are looked at, so the rest of your forwards stay untouched.
+The plugin reacts to changes as they happen. It watches each instance's config file and AMP's `instances.json`, so creating an instance, changing a port or deleting an instance triggers a sync within a few seconds. A port change only looks at the changed instance's rules, so the rest of your forwards stay untouched.
 
-A timer runs in the background as a fallback (default every 15 minutes). It does a full pass over all instances to catch drift, or anything the live sync missed. Set the interval to 0 to turn it off and sync manually only. Changing the interval takes effect after the instance restarts. You can also run a sync at any time with the Sync Now button in the settings.
+A timer runs in the background as a fallback (default every 15 minutes). It does a full pass over all instances to catch drift, or anything the live sync missed. Set the interval to 0 to turn it off and sync manually only. Interval changes apply straight away. Preview Changes shows what a sync would do without changing anything, and Sync Now runs one at any time.
 
-On Linux the watcher takes one inotify watch per folder under `instances/`. On systems with a low `fs.inotify.max_user_watches` limit it may fail to start; the plugin logs this and falls back to the timer.
+Conflicts and skipped instances are announced once, not on every timer run. They are announced again if they go away and come back.
+
+On Linux the watcher uses one inotify watch per instance folder plus one for the AMP data folder. If a watch can't be set up, the plugin logs it and the timer covers that instance.
 
 ## Requirements
 
@@ -34,11 +39,11 @@ On Linux the watcher takes one inotify watch per folder under `instances/`. On s
 1. Copy `ModuleShared.dll` from your AMP install into `lib/`.
 2. Run `dotnet build -c Release`.
 
-The output is `bin/Release/net8.0/UnifiPortSync.dll`. `ModuleShared.dll` is only used to build against and is not shipped, because AMP already provides it at runtime.
+The output is `bin/Release/net8.0/UnifiPortSync.dll` plus `bin/Release/net8.0/WebRoot/Plugin.js`. `ModuleShared.dll` is only used to build against and is not shipped, because AMP already provides it at runtime.
 
 ## Installing
 
-1. Put `UnifiPortSync.dll` in the instance's plugin folder: `.../instances/<instance>/Plugins/UnifiPortSync/UnifiPortSync.dll`
+1. Put `UnifiPortSync.dll` and the `WebRoot` folder in the instance's plugin folder: `.../instances/<instance>/Plugins/UnifiPortSync/`. The `WebRoot/Plugin.js` script shows the result and conflict dialogs.
 2. Add the plugin to that instance's load list in `AMPConfig.conf` while the instance is stopped:
 
    ```
@@ -69,16 +74,30 @@ Open the instance configuration and go to Instance Deployment, tab Unifi Network
 | UniFi Controller Host / IP | Hostname or IP of the UniFi OS console. |
 | UniFi Controller Port | HTTPS port of the console (usually 443). |
 | UniFi API Key | Control Plane API key (stored encrypted). |
+| UniFi Certificate Fingerprint | Optional. SHA-256 fingerprint of the console's certificate. When set, the plugin refuses to talk to any other certificate. Test Connection shows the value to paste. |
 | UniFi Site | Site identifier. Use Test Connection to list your sites. |
-| Forward Target LAN IP | The LAN IP that game ports should forward to. |
+| Forward Target LAN IP | The IPv4 LAN address that game ports should forward to. |
 | WAN Interface | WAN 1, WAN 2 or All WANs. For multi-WAN gateways; single WAN setups keep WAN 1. Changing it updates the existing rules on the next sync. |
 | Sync Interval (minutes) | How often the fallback timer runs. 0 turns it off. |
+| Never Forward Ports Named | Extra comma-separated words; ports whose name contains one are never forwarded. |
 | Rule Name Prefix | Prefix for the rules this plugin owns (default `AMP:`). Must not be empty. |
 | AMP Data Path | Optional. Leave blank to auto detect `instances.json`. |
 
+## Permissions
+
+The plugin's endpoints need one of two permissions, assigned under Role Management. Super admins have both.
+
+- **ViewStatus**: test the connection, preview a sync, list the site's forwards.
+- **ApplyChanges**: run a sync that changes the gateway.
+
 ## Endpoints
 
-- `TestUnifiConnection` checks the connection and lists your sites.
+- `TestUnifiConnection` checks the connection, lists your sites and shows the certificate fingerprint.
 - `SyncNow(apply)` returns the reconcile plan. Pass `apply=true` to make changes.
-- `RunSync` applies a sync and reports a short summary (used by the button).
+- `PreviewSync` shows a dry run as a dialog (used by the Preview Changes button).
+- `RunSync` applies a sync and reports a summary (used by the Sync Now button).
 - `ListUnifiPortForwards` lists the current forwards on the site.
+
+## Tests
+
+`dotnet test tests/UnifiPortSync.Tests` runs the reconciler tests against a fake UniFi controller and a throwaway AMP data folder. `ModuleShared.dll` still needs to be in `lib/` for the plugin project to build.

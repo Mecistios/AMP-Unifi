@@ -25,6 +25,7 @@ namespace UnifiPortSync
             [WebSetting("Enable UniFi Port Sync",
                 "Master switch. When enabled, AMP keeps UniFi port-forwards in sync with instance ports (create/update/remove). When disabled no syncs run and no changes are made.",
                 false, "", "", "unifi,ports,sync", false, "", "", "", "Unifi Network Automation",10)]
+            [InlineAction("UnifiPortSync", "PreviewSync", "Preview Changes", "", false)]
             [InlineAction("UnifiPortSync", "RunSync", "Sync Now", "", false)]
             public bool Enabled = false;
 
@@ -44,6 +45,11 @@ namespace UnifiPortSync
             [StoreEncrypted(true)]
             public string ApiKey = "";
 
+            [WebSetting("UniFi Certificate Fingerprint (optional)",
+                "SHA-256 fingerprint of the UniFi console's certificate. When set, the plugin only talks to a console presenting exactly this certificate, so the API key can't be sent to an impostor. Test Connection shows the current fingerprint to paste here. Leave blank to accept the console's self-signed certificate.",
+                false, "", "", "unifi,certificate,fingerprint", false, "", "", "", "Unifi Network Automation",45)]
+            public string CertFingerprint = "";
+
             [WebSetting("UniFi Site",
                 "Site identifier (internalReference), e.g. 'default'. Use the Test Connection button to list your sites.",
                 false, "", "", "unifi,site", false, "default", "", "", "Unifi Network Automation",50)]
@@ -61,7 +67,7 @@ namespace UnifiPortSync
             public WanInterface Interface = WanInterface.Wan1;
 
             [WebSetting("Sync Interval (minutes)",
-                "How often the fallback timer does a full sweep. Changes to instances are already picked up live, so this only catches drift. Set to 0 to turn the timer off. A new interval takes effect after the instance restarts.",
+                "How often the fallback timer does a full sweep. Changes to instances are already picked up live, so this only catches drift. Set to 0 to turn the timer off.",
                 false, "", "", "unifi,interval", false, "15", "min", "", "Unifi Network Automation",70)]
             public int SyncIntervalMinutes = 15;
 
@@ -69,6 +75,11 @@ namespace UnifiPortSync
                 "Prefix for port-forward rules this plugin creates, so it only manages its own rules. Must not be empty.",
                 false, "", "", "unifi,prefix", false, "AMP:", "", "", "Unifi Network Automation",80)]
             public string RuleNamePrefix = "AMP:";
+
+            [WebSetting("Never Forward Ports Named",
+                "Extra comma-separated words. A port whose name contains one of them is never forwarded. RCON, admin, telnet, console, control and echo ports are always left closed.",
+                false, "", "", "unifi,exclude,ports", false, "restapi, webui", "", "", "Unifi Network Automation",85)]
+            public string ExcludedPortNames = "";
 
             [WebSetting("AMP Data Path (optional)",
                 "Path to the AMP data folder that contains instances.json. Leave blank to auto-detect.",
